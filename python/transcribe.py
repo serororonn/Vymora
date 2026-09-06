@@ -11,6 +11,13 @@ import numpy as np
 import librosa
 import pretty_midi
 
+try:
+    from basic_pitch.inference import predict
+    from basic_pitch import ICASSP_2022_MODEL_PATH
+except ImportError:
+    predict = None
+    ICASSP_2022_MODEL_PATH = None
+
 
 INSTRUMENTS = {
     "vocals": (53, "Vocals"),
@@ -19,6 +26,14 @@ INSTRUMENTS = {
     "piano": (0, "Piano"),
     "drums": (0, "Drums"),
     "other": (48, "Other"),
+}
+
+PITCH_RANGES = {
+    "vocals": (65.0, 1047.0),
+    "bass": (27.5, 523.0),
+    "guitar": (73.0, 1319.0),
+    "piano": (27.5, 4186.0),
+    "other": (27.5, 4186.0),
 }
 
 
@@ -98,6 +113,70 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
     return instrument
 
 
+def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None):
+    """Extract overlapping notes from one separated stem with Basic Pitch."""
+    if predict is None:
+        raise RuntimeError("Basic Pitchがインストールされていません")
+    range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
+    _, midi_data, _ = predict(
+        str(input_path),
+        model_or_model_path=ICASSP_2022_MODEL_PATH,
+        onset_threshold=0.45,
+        frame_threshold=0.3,
+        minimum_note_length=60.0,
+        minimum_frequency=fmin or range_min,
+        maximum_frequency=fmax or range_max,
+    )
+    source_instrument = next((item for item in midi_data.instruments if not item.is_drum), None)
+    program, track_name = INSTRUMENTS[instrument_name]
+    instrument = pretty_midi.Instrument(program=program, name=track_name)
+    if source_instrument is not None:
+        instrument.notes.extend(source_instrument.notes)
+    return instrument
+
+
+def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
+    """Estimate several simultaneous notes per frame when Basic Pitch is unavailable."""
+    y, sr = librosa.load(input_path, sr=sr, mono=True)
+    pitches, magnitudes = librosa.piptrack(y=y, sr=sr, hop_length=hop_length, fmin=fmin, fmax=fmax)
+    times = librosa.frames_to_time(np.arange(pitches.shape[1]), sr=sr, hop_length=hop_length)
+    program, track_name = INSTRUMENTS[instrument_name]
+    instrument = pretty_midi.Instrument(program=program, name=track_name)
+    active = {}
+    max_magnitude = float(np.max(magnitudes)) if magnitudes.size else 1.0
+
+    for frame_index in range(pitches.shape[1]):
+        column = magnitudes[:, frame_index]
+        threshold = max(float(np.max(column)) * 0.25, max_magnitude * 0.015)
+        candidates = np.flatnonzero(column >= threshold)
+        candidates = candidates[np.argsort(column[candidates])[-4:]] if len(candidates) else []
+        current = set()
+        for bin_index in candidates:
+            frequency = float(pitches[bin_index, frame_index])
+            if frequency <= 0:
+                continue
+            pitch = int(np.clip(np.round(librosa.hz_to_midi(frequency)), 0, 127))
+            current.add(pitch)
+            if pitch not in active:
+                active[pitch] = [times[frame_index], frame_index, float(column[bin_index])]
+            else:
+                active[pitch][1] = frame_index
+                active[pitch][2] = max(active[pitch][2], float(column[bin_index]))
+        for pitch in list(active):
+            if pitch not in current:
+                start, last_frame, magnitude = active.pop(pitch)
+                end = times[last_frame] + hop_length / sr
+                if end - start >= 0.06:
+                    velocity = int(np.clip(40 + magnitude / max_magnitude * 87, 1, 127))
+                    instrument.notes.append(pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=end))
+    for pitch, (start, last_frame, magnitude) in active.items():
+        end = times[last_frame] + hop_length / sr
+        if end - start >= 0.06:
+            velocity = int(np.clip(40 + magnitude / max_magnitude * 87, 1, 127))
+            instrument.notes.append(pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=end))
+    return instrument
+
+
 def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
     pm = pretty_midi.PrettyMIDI()
     pm.instruments.append(
@@ -106,7 +185,7 @@ def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_le
     pm.write(output_path)
 
 
-def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None):
+def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True):
     pm = pretty_midi.PrettyMIDI()
     instrument_items = [(name, path) for name, path in stem_paths.items() if name in INSTRUMENTS]
     track_count = len(instrument_items) + (2 if "drums" in stem_paths else 0)
@@ -119,16 +198,15 @@ def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, 
             pm.instruments.extend(drum_tracks.values())
             completed_tracks += len(drum_tracks)
         else:
-            pm.instruments.append(
-                transcribe_instrument(
-                    stem_path,
-                    instrument_name,
-                    sr=sr,
-                    fmin=fmin,
-                    fmax=fmax,
-                    hop_length=hop_length,
+            if high_accuracy and predict is not None:
+                track = transcribe_polyphonic(stem_path, instrument_name, fmin=fmin, fmax=fmax)
+            elif high_accuracy:
+                track = transcribe_polyphonic_fallback(
+                    stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length
                 )
-            )
+            else:
+                track = transcribe_instrument(stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length)
+            pm.instruments.append(track)
             completed_tracks += 1
         if progress is not None:
             progress(completed_tracks / track_count)
