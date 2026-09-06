@@ -21,5 +21,14 @@ pip install -r requirements.txt
 python transcribe.py path\to\input.wav path\to\output.mid
 ```
 
+ローカルWebで起動:
+
+```powershell
+pip install -r requirements.txt
+python app.py
+```
+
+ブラウザで `http://127.0.0.1:5000` を開き、音声ファイルを選択してください。
+
 注意:
 - 本プロトタイプは研究/実験目的の簡易実装です。実運用/DAW内リアルタイム用途では、モデルの最適化、量子化、C++/JUCE プラグイン化が必要です。

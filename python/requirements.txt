@@ -2,3 +2,4 @@ librosa>=0.8
 pretty_midi>=0.2.10
 numpy
 soundfile
+flask>=2.3
