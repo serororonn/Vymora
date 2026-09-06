@@ -20,11 +20,15 @@
     input[type=file] { width: 100%; font: 14px Arial, sans-serif; }
     label { display: block; margin: 0 0 18px; font: 700 12px Arial, sans-serif; color: var(--muted); }
     input[type=number] { display: block; width: 100%; margin-top: 7px; padding: 11px 12px; border: 1px solid var(--line); color: var(--ink); background: #fff; font: 15px Arial, sans-serif; }
+    select { display: block; width: 100%; margin-top: 7px; padding: 11px 12px; border: 1px solid var(--line); color: var(--ink); background: #fff; font: 15px Arial, sans-serif; }
     .settings h2 { margin: 0 0 24px; font-size: 22px; font-weight: 500; }
     button { width: 100%; padding: 15px 18px; border: 0; color: white; background: var(--accent); cursor: pointer; font: 700 14px Arial, sans-serif; }
     button:hover { background: #b9432b; }
     button:disabled { opacity: .55; cursor: wait; }
     #status { min-height: 24px; margin: 20px 0 0; color: var(--muted); font: 14px/1.5 Arial, sans-serif; }
+    .progress-wrap { display: none; margin: 18px 0 0; }
+    .progress-meta { display: flex; justify-content: space-between; margin-bottom: 7px; color: var(--muted); font: 12px Arial, sans-serif; }
+    progress { width: 100%; height: 9px; accent-color: var(--accent); }
     .hint { margin: 20px 0 0; color: var(--muted); font: 12px/1.5 Arial, sans-serif; }
     @media (max-width: 680px) { main { padding-top: 42px; } form { grid-template-columns: 1fr; } .panel { padding: 22px; } }
   </style>
@@ -34,7 +38,7 @@
     <header>
       <p class="eyebrow">Local audio experiment</p>
       <h1>Audio<br>to MIDI</h1>
-      <p class="intro">音声ファイルを選び、ピッチをMIDIノートへ変換します。処理はこのPC上で完結します。</p>
+      <p class="intro">音源をボーカル、ベース、ギター、ピアノ、キック、スネア、ハイハット、その他へ分離し、各パートをMIDIトラックに変換します。</p>
     </header>
     <form id="transcribe-form">
       <label class="panel upload" for="audio">
@@ -44,11 +48,21 @@
       </label>
       <section class="panel settings">
         <h2>変換設定</h2>
+        <label>変換モード
+          <select name="mode">
+            <option value="multitrack">楽器別マルチトラック</option>
+            <option value="single">単一トラック（高速）</option>
+          </select>
+        </label>
         <label>サンプルレート<input name="sr" type="number" value="16000" min="1"></label>
         <label>最低周波数 (Hz)<input name="fmin" type="number" value="65" min="1" step="0.1"></label>
         <label>最高周波数 (Hz)<input name="fmax" type="number" value="2093" min="1" step="0.1"></label>
         <label>ホップ長<input name="hop" type="number" value="256" min="1"></label>
         <button id="submit" type="submit">MIDIに変換する</button>
+        <div class="progress-wrap" id="progress-wrap">
+          <div class="progress-meta"><span id="progress-message">準備中...</span><span id="progress-value">0%</span></div>
+          <progress id="progress" max="100" value="0"></progress>
+        </div>
         <p id="status" role="status"></p>
       </section>
     </form>
@@ -57,21 +71,46 @@
     const form = document.querySelector('#transcribe-form');
     const button = document.querySelector('#submit');
     const status = document.querySelector('#status');
+    const progressWrap = document.querySelector('#progress-wrap');
+    const progress = document.querySelector('#progress');
+    const progressValue = document.querySelector('#progress-value');
+    const progressMessage = document.querySelector('#progress-message');
+
+    const waitForJob = async (jobId) => {
+      while (true) {
+        const response = await fetch(`/progress/${jobId}`);
+        const job = await response.json();
+        progress.value = job.progress || 0;
+        progressValue.textContent = `${job.progress || 0}%`;
+        progressMessage.textContent = job.message || '';
+        if (job.status === 'completed') return;
+        if (job.status === 'error') throw new Error(job.message || '変換に失敗しました。');
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    };
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       button.disabled = true;
-      status.textContent = '解析中... 音声の長さによって時間がかかります。';
+      progressWrap.style.display = 'block';
+      progress.value = 0;
+      progressValue.textContent = '0%';
+      status.textContent = '音声の長さによって数分かかる場合があります。';
       try {
         const response = await fetch('/transcribe', { method: 'POST', body: new FormData(form) });
-        if (!response.ok) {
+        if (response.status !== 202) {
           const result = await response.json();
           throw new Error(result.error || '変換に失敗しました。');
         }
-        const blob = await response.blob();
+        const { job_id: jobId } = await response.json();
+        await waitForJob(jobId);
+        const result = await fetch(`/download/${jobId}`);
+        if (!result.ok) throw new Error('MIDIのダウンロードに失敗しました。');
+        const blob = await result.blob();
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || 'transcribed.mid';
+        link.download = result.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || 'transcribed.mid';
         link.click();
         URL.revokeObjectURL(url);
         status.textContent = '変換完了。MIDIをダウンロードしました。';

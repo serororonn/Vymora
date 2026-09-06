@@ -3,3 +3,4 @@ pretty_midi>=0.2.10
 numpy
 soundfile
 flask>=2.3
+demucs>=4.0.0
