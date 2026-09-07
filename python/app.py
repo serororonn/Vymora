@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from separation import separate_stems
-from transcribe import _resolve_tempo, transcribe, transcribe_stems
+from transcribe import ACCURACY_PRESETS, _resolve_tempo, transcribe, transcribe_stems
 
 def resource_path(relative_path):
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -81,7 +81,8 @@ def create_midi():
         fmax = float(request.form.get("fmax", 2093.0))
         hop_length = int(request.form.get("hop", 256))
         tempo = float(request.form.get("tempo", 0.0))
-        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0 or tempo < 0:
+        accuracy = request.form.get("accuracy", "normal")
+        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0 or tempo < 0 or accuracy not in ACCURACY_PRESETS:
             raise ValueError
     except ValueError:
         return {"error": "設定値を確認してください。"}, 400
@@ -92,7 +93,7 @@ def create_midi():
     output_path = Path(work_dir) / "transcribed.mid"
     audio.save(input_path)
     job_id = uuid.uuid4().hex
-    settings = {"sr": sr, "fmin": fmin, "fmax": fmax, "hop_length": hop_length, "tempo": tempo}
+    settings = {"sr": sr, "fmin": fmin, "fmax": fmax, "hop_length": hop_length, "tempo": tempo, "accuracy": accuracy}
     with JOBS_LOCK:
         JOBS[job_id] = {
             "status": "running",

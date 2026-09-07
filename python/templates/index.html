@@ -54,6 +54,13 @@
             <option value="single">単一トラック（高速）</option>
           </select>
         </label>
+        <label>検出の強さ
+          <select name="accuracy">
+            <option value="strong">強め（音符を多めに拾う）</option>
+            <option value="normal" selected>普通（標準）</option>
+            <option value="weak">弱め（誤検出を抑える）</option>
+          </select>
+        </label>
         <label>サンプルレート<input name="sr" type="number" value="16000" min="1"></label>
         <label>最低周波数 (Hz)<input name="fmin" type="number" value="65" min="1" step="0.1"></label>
         <label>最高周波数 (Hz)<input name="fmax" type="number" value="2093" min="1" step="0.1"></label>

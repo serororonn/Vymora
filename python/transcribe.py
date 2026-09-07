@@ -36,6 +36,16 @@ PITCH_RANGES = {
     "other": (27.5, 4186.0),
 }
 
+ACCURACY_PRESETS = {
+    "strong": {"onset_threshold": 0.35, "frame_threshold": 0.25, "minimum_note_length": 45.0, "peak_ratio": 0.25, "global_ratio": 0.015, "max_peaks": 4, "min_duration": 0.04},
+    "normal": {"onset_threshold": 0.45, "frame_threshold": 0.3, "minimum_note_length": 60.0, "peak_ratio": 0.35, "global_ratio": 0.025, "max_peaks": 3, "min_duration": 0.06},
+    "weak": {"onset_threshold": 0.55, "frame_threshold": 0.4, "minimum_note_length": 90.0, "peak_ratio": 0.45, "global_ratio": 0.04, "max_peaks": 2, "min_duration": 0.09},
+}
+
+
+def _accuracy_values(accuracy):
+    return ACCURACY_PRESETS.get(accuracy, ACCURACY_PRESETS["normal"])
+
 
 def transcribe_drums(input_path, sr=16000, hop_length=256):
     y, sr = librosa.load(input_path, sr=sr, mono=True)
@@ -67,7 +77,7 @@ def transcribe_drums(input_path, sr=16000, hop_length=256):
     return instruments
 
 
-def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
+def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal"):
     if instrument_name == "drums":
         raise ValueError("drums must be expanded into individual drum tracks")
     program, track_name = INSTRUMENTS[instrument_name]
@@ -75,7 +85,8 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
 
     # 基本ピッチ推定（librosa.pyin）
     f0, voiced_flag, voiced_prob = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr, hop_length=hop_length)
-    voiced = np.isfinite(f0) & (voiced_prob >= 0.55)
+    values = _accuracy_values(accuracy)
+    voiced = np.isfinite(f0) & (voiced_prob >= values["frame_threshold"])
     midi_values = np.full(len(f0), np.nan)
     midi_values[voiced] = librosa.hz_to_midi(f0[voiced])
     frames = np.arange(len(f0))
@@ -105,7 +116,7 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
             amps.append(amp)
             j += 1
         end = times[j - 1] + (hop_length / sr)
-        if end - start < 0.06:
+        if end - start < values["min_duration"]:
             i = j
             continue
         median_freq = float(np.median(freqs))
@@ -121,19 +132,20 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
     return instrument
 
 
-def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None):
+def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None, accuracy="normal"):
     """Extract overlapping notes from one separated stem with Basic Pitch."""
     if predict is None:
         raise RuntimeError("Basic Pitchがインストールされていません")
     range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
     minimum_frequency = max(fmin or range_min, range_min)
     maximum_frequency = min(fmax or range_max, range_max)
+    values = _accuracy_values(accuracy)
     _, midi_data, _ = predict(
         str(input_path),
         model_or_model_path=ICASSP_2022_MODEL_PATH,
-        onset_threshold=0.45,
-        frame_threshold=0.3,
-        minimum_note_length=60.0,
+        onset_threshold=values["onset_threshold"],
+        frame_threshold=values["frame_threshold"],
+        minimum_note_length=values["minimum_note_length"],
         minimum_frequency=minimum_frequency,
         maximum_frequency=maximum_frequency,
     )
@@ -145,7 +157,7 @@ def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None):
     return instrument
 
 
-def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
+def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal"):
     """Estimate several simultaneous notes per frame when Basic Pitch is unavailable."""
     range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
     fmin = max(fmin, range_min)
@@ -157,12 +169,13 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
     instrument = pretty_midi.Instrument(program=program, name=track_name)
     active = {}
     max_magnitude = float(np.max(magnitudes)) if magnitudes.size else 1.0
+    values = _accuracy_values(accuracy)
 
     for frame_index in range(pitches.shape[1]):
         column = magnitudes[:, frame_index]
-        threshold = max(float(np.max(column)) * 0.35, max_magnitude * 0.025)
+        threshold = max(float(np.max(column)) * values["peak_ratio"], max_magnitude * values["global_ratio"])
         candidates = np.flatnonzero(column >= threshold)
-        candidates = candidates[np.argsort(column[candidates])[-3:]] if len(candidates) else []
+        candidates = candidates[np.argsort(column[candidates])[-values["max_peaks"]:]] if len(candidates) else []
         current = set()
         for bin_index in candidates:
             frequency = float(pitches[bin_index, frame_index])
@@ -179,12 +192,12 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
             if pitch not in current:
                 start, last_frame, magnitude = active.pop(pitch)
                 end = times[last_frame] + hop_length / sr
-                if end - start >= 0.06:
+                if end - start >= values["min_duration"]:
                     velocity = int(np.clip(40 + magnitude / max_magnitude * 87, 1, 127))
                     instrument.notes.append(pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=end))
     for pitch, (start, last_frame, magnitude) in active.items():
         end = times[last_frame] + hop_length / sr
-        if end - start >= 0.06:
+        if end - start >= values["min_duration"]:
             velocity = int(np.clip(40 + magnitude / max_magnitude * 87, 1, 127))
             instrument.notes.append(pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=end))
     return instrument
@@ -199,16 +212,16 @@ def _resolve_tempo(input_path, tempo, sr):
     return estimated_tempo if estimated_tempo > 0 else 120.0
 
 
-def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=0.0):
+def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=0.0, accuracy="normal"):
     tempo = _resolve_tempo(input_path, tempo, sr)
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     pm.instruments.append(
-        transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length)
+        transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy)
     )
     pm.write(output_path)
 
 
-def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0):
+def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0, accuracy="normal"):
     if tempo <= 0:
         tempo = 120.0
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
@@ -224,13 +237,13 @@ def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, 
             completed_tracks += len(drum_tracks)
         else:
             if high_accuracy and predict is not None:
-                track = transcribe_polyphonic(stem_path, instrument_name, fmin=fmin, fmax=fmax)
+                track = transcribe_polyphonic(stem_path, instrument_name, fmin=fmin, fmax=fmax, accuracy=accuracy)
             elif high_accuracy:
                 track = transcribe_polyphonic_fallback(
-                    stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length
+                    stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy
                 )
             else:
-                track = transcribe_instrument(stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length)
+                track = transcribe_instrument(stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy)
             pm.instruments.append(track)
             completed_tracks += 1
         if progress is not None:
@@ -247,9 +260,10 @@ def main():
     parser.add_argument("--fmax", type=float, default=2093.0)
     parser.add_argument("--hop", type=int, default=256)
     parser.add_argument("--tempo", type=float, default=0.0, help="BPM; 0で音源から自動推定")
+    parser.add_argument("--accuracy", choices=ACCURACY_PRESETS, default="normal")
     args = parser.parse_args()
 
-    transcribe(args.input, args.output, sr=args.sr, fmin=args.fmin, fmax=args.fmax, hop_length=args.hop, tempo=args.tempo)
+    transcribe(args.input, args.output, sr=args.sr, fmin=args.fmin, fmax=args.fmax, hop_length=args.hop, tempo=args.tempo, accuracy=args.accuracy)
     print(f"Wrote {args.output}")
 
 
