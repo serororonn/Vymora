@@ -3,5 +3,7 @@ pretty_midi>=0.2.10
 numpy
 soundfile
 flask>=2.3
+waitress>=3.0
 demucs>=4.0.0
 basic-pitch>=0.4.0; python_version < "3.11"
+pyinstaller>=6.0

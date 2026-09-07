@@ -11,17 +11,34 @@ def separate_stems(input_path, output_dir, model_name="htdemucs_6s"):
     """Separate an audio file and return the requested Demucs stem paths."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "demucs",
-        "--name",
-        model_name,
-        "--out",
-        str(output_dir),
-        str(input_path),
-    ]
-    subprocess.run(command, check=True, capture_output=True, text=True)
+    if getattr(sys, "frozen", False):
+        from demucs.separate import main as demucs_main
+
+        old_argv = sys.argv
+        sys.argv = [
+            "demucs",
+            "--name",
+            model_name,
+            "--out",
+            str(output_dir),
+            str(input_path),
+        ]
+        try:
+            demucs_main()
+        finally:
+            sys.argv = old_argv
+    else:
+        command = [
+            sys.executable,
+            "-m",
+            "demucs",
+            "--name",
+            model_name,
+            "--out",
+            str(output_dir),
+            str(input_path),
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True)
 
     track_dir = output_dir / model_name / Path(input_path).stem
     missing = [stem for stem in STEMS if not (track_dir / f"{stem}.wav").exists()]

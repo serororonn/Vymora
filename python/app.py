@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local web UI for the Audio2MIDI prototype."""
 import shutil
+import sys
 import tempfile
 import threading
 import uuid
@@ -13,7 +14,12 @@ from werkzeug.utils import secure_filename
 from separation import separate_stems
 from transcribe import transcribe, transcribe_stems
 
-app = Flask(__name__)
+def resource_path(relative_path):
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / relative_path
+
+
+app = Flask(__name__, template_folder=str(resource_path("templates")))
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 ALLOWED_EXTENSIONS = {"wav", "mp3", "flac", "ogg", "m4a"}
 JOBS = {}
@@ -123,4 +129,10 @@ def download_result(job_id):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    frozen = getattr(sys, "frozen", False)
+    if frozen:
+        from waitress import serve
+
+        serve(app, host="127.0.0.1", port=5000)
+    else:
+        app.run(host="127.0.0.1", port=5000, debug=True)

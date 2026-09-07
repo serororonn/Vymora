@@ -40,6 +40,19 @@ python app.py
 
 初回のマルチトラック変換ではDemucsモデルのダウンロードが発生します。音源の長さ、CPU/GPU、ストレージ速度により処理時間が変わります。
 
+## Windows exeの作成
+
+Python 3.12の仮想環境を用意した後、PowerShellで次を実行します。
+
+```powershell
+Set-Location .\python
+python -m venv .venv312
+.\.venv312\Scripts\Activate.ps1
+.\build_exe.ps1
+```
+
+生成物は `python\dist\Vymora.exe` です。exeを起動した後、ブラウザで http://127.0.0.1:5000 を開きます。初回のマルチトラック変換ではDemucsモデルのダウンロードが発生します。
+
 ## 変換方式
 
 ```text
