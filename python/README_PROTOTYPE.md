@@ -19,12 +19,12 @@ Demucsの6ステムを使い、ドラムステムはオンセットとスペク�
 
 ## セットアップ
 
-Python 3.12前後を推奨します。PowerShellで実行します。
+Basic Pitchの高精度推定を使う場合はPython 3.10を使用します。PowerShellで実行します。
 
 ```powershell
 Set-Location .\python
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+py -3.10 -m venv .venv310
+.\.venv310\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -56,7 +56,7 @@ APIの概要:
   -> 8トラックMIDI生成
 ```
 
-Basic Pitchを利用できる環境では、各ステムへBasic Pitchを個別に実行します。利用できない場合は、librosaの複数ピーク解析へ自動フォールバックします。単一トラック（高速）モードではlibrosa.pyinを使用します。
+Python 3.10とTensorFlowが導入された環境では、各ステムへBasic Pitchを個別に実行します。利用できない場合は、librosaの複数ピーク解析へ自動フォールバックします。単一トラック（高速）モードではlibrosa.pyinを使用します。テンポを0にすると音源からBPMを自動推定します。
 
 ## 精度評価
 

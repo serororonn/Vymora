@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from separation import separate_stems
-from transcribe import transcribe, transcribe_stems
+from transcribe import _resolve_tempo, transcribe, transcribe_stems
 
 def resource_path(relative_path):
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -42,6 +42,8 @@ def update_job(job_id, **values):
 
 def process_job(job_id, input_path, output_path, work_dir, settings, mode):
     try:
+        if settings["tempo"] <= 0:
+            settings["tempo"] = _resolve_tempo(input_path, 0, settings["sr"])
         update_job(job_id, progress=10, message="音源を分離しています...")
         if mode == "single":
             transcribe(input_path, output_path, **settings)
@@ -78,8 +80,8 @@ def create_midi():
         fmin = float(request.form.get("fmin", 65.0))
         fmax = float(request.form.get("fmax", 2093.0))
         hop_length = int(request.form.get("hop", 256))
-        tempo = float(request.form.get("tempo", 120.0))
-        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0 or tempo <= 0:
+        tempo = float(request.form.get("tempo", 0.0))
+        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0 or tempo < 0:
             raise ValueError
     except ValueError:
         return {"error": "設定値を確認してください。"}, 400

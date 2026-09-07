@@ -126,14 +126,16 @@ def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None):
     if predict is None:
         raise RuntimeError("Basic Pitchがインストールされていません")
     range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
+    minimum_frequency = max(fmin or range_min, range_min)
+    maximum_frequency = min(fmax or range_max, range_max)
     _, midi_data, _ = predict(
         str(input_path),
         model_or_model_path=ICASSP_2022_MODEL_PATH,
         onset_threshold=0.45,
         frame_threshold=0.3,
         minimum_note_length=60.0,
-        minimum_frequency=fmin or range_min,
-        maximum_frequency=fmax or range_max,
+        minimum_frequency=minimum_frequency,
+        maximum_frequency=maximum_frequency,
     )
     source_instrument = next((item for item in midi_data.instruments if not item.is_drum), None)
     program, track_name = INSTRUMENTS[instrument_name]
@@ -145,6 +147,9 @@ def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None):
 
 def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
     """Estimate several simultaneous notes per frame when Basic Pitch is unavailable."""
+    range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
+    fmin = max(fmin, range_min)
+    fmax = min(fmax, range_max)
     y, sr = librosa.load(input_path, sr=sr, mono=True)
     pitches, magnitudes = librosa.piptrack(y=y, sr=sr, hop_length=hop_length, fmin=fmin, fmax=fmax)
     times = librosa.frames_to_time(np.arange(pitches.shape[1]), sr=sr, hop_length=hop_length)
@@ -155,7 +160,7 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
 
     for frame_index in range(pitches.shape[1]):
         column = magnitudes[:, frame_index]
-        threshold = max(float(np.max(column)) * 0.25, max_magnitude * 0.015)
+        threshold = max(float(np.max(column)) * 0.35, max_magnitude * 0.025)
         candidates = np.flatnonzero(column >= threshold)
         candidates = candidates[np.argsort(column[candidates])[-3:]] if len(candidates) else []
         current = set()
@@ -185,7 +190,17 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
     return instrument
 
 
-def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=120.0):
+def _resolve_tempo(input_path, tempo, sr):
+    if tempo > 0:
+        return tempo
+    y, loaded_sr = librosa.load(input_path, sr=sr, mono=True)
+    estimated_tempo, _ = librosa.beat.beat_track(y=y, sr=loaded_sr, hop_length=256)
+    estimated_tempo = float(np.asarray(estimated_tempo).reshape(-1)[0])
+    return estimated_tempo if estimated_tempo > 0 else 120.0
+
+
+def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=0.0):
+    tempo = _resolve_tempo(input_path, tempo, sr)
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     pm.instruments.append(
         transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length)
@@ -193,7 +208,9 @@ def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_le
     pm.write(output_path)
 
 
-def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=120.0):
+def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0):
+    if tempo <= 0:
+        tempo = 120.0
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     instrument_items = [(name, path) for name, path in stem_paths.items() if name in INSTRUMENTS]
     track_count = len(instrument_items) + (2 if "drums" in stem_paths else 0)
@@ -229,7 +246,7 @@ def main():
     parser.add_argument("--fmin", type=float, default=65.0)
     parser.add_argument("--fmax", type=float, default=2093.0)
     parser.add_argument("--hop", type=int, default=256)
-    parser.add_argument("--tempo", type=float, default=120.0)
+    parser.add_argument("--tempo", type=float, default=0.0, help="BPM; 0で音源から自動推定")
     args = parser.parse_args()
 
     transcribe(args.input, args.output, sr=args.sr, fmin=args.fmin, fmax=args.fmax, hop_length=args.hop, tempo=args.tempo)

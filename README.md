@@ -19,8 +19,8 @@
 4. Piano
 5. Other
 6. Kick
-7. Snare
-8. Hi-Hat
+py -3.10 -m venv .venv310
+.\.venv310\Scripts\Activate.ps1
 
 ドラムはDemucsのドラムステムをオンセットとスペクトル特徴から3種類へ分類します。
 
@@ -31,12 +31,13 @@ PowerShellで次を実行します。
 ```powershell
 Set-Location .\python
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+py -3.10 -m venv .venv310
+.\.venv310\Scripts\Activate.ps1
 python app.py
 ```
 
 ブラウザで http://127.0.0.1:5000 を開きます。
+Python 3.10とTensorFlowが利用できる環境ではBasic Pitchを使います。利用できない環境では、librosaの複数ピーク解析へ自動フォールバックします。単一トラックの高速モードでは、従来のpyinによる単音推定を使います。テンポを0にすると音源からBPMを自動推定します。多重音源では単一トラックよりマルチトラックモードを使用してください。
 
 初回のマルチトラック変換ではDemucsモデルのダウンロードが発生します。音源の長さ、CPU/GPU、ストレージ速度により処理時間が変わります。
 
@@ -63,7 +64,7 @@ python -m venv .venv312
   -> 1つのMIDIファイルへ統合
 ```
 
-ポリフォニック推定器が利用できる環境ではBasic Pitchを使います。利用できない環境では、librosaの複数ピーク解析へ自動フォールバックします。単一トラックの高速モードでは、従来のpyinによる単音推定を使います。
+ポリフォニック推定器が利用できる環境ではBasic Pitchを使います。利用できない環境では、librosaの複数ピーク解析へ自動フォールバックします。単一トラックの高速モードでは、従来のpyinによる単音推定を使います。テンポを0にすると音源からBPMを自動推定します。多重音源では単一トラックよりマルチトラックモードを使用してください。
 
 ## 精度評価
 

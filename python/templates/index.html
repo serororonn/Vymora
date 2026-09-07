@@ -58,7 +58,7 @@
         <label>最低周波数 (Hz)<input name="fmin" type="number" value="65" min="1" step="0.1"></label>
         <label>最高周波数 (Hz)<input name="fmax" type="number" value="2093" min="1" step="0.1"></label>
         <label>ホップ長<input name="hop" type="number" value="256" min="1"></label>
-        <label>テンポ (BPM)<input name="tempo" type="number" value="120" min="1" step="0.1"></label>
+        <label>テンポ (BPM、0は自動)<input name="tempo" type="number" value="0" min="0" step="0.1"></label>
         <button id="submit" type="submit">MIDIに変換する</button>
         <div class="progress-wrap" id="progress-wrap">
           <div class="progress-meta"><span id="progress-message">準備中...</span><span id="progress-value">0%</span></div>

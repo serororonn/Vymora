@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 python/.venv312/
+python/.venv310/
 python/build/
 python/dist/
 python/Vymora.spec

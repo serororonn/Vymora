@@ -5,5 +5,6 @@ soundfile
 flask>=2.3
 waitress>=3.0
 demucs>=4.0.0
-basic-pitch>=0.4.0; python_version < "3.11"
+setuptools<81; python_version < "3.11"
+basic-pitch[tf]>=0.4.0; python_version < "3.11"
 pyinstaller>=6.0
