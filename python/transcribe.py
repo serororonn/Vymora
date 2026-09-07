@@ -75,6 +75,9 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
 
     # 基本ピッチ推定（librosa.pyin）
     f0, voiced_flag, voiced_prob = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr, hop_length=hop_length)
+    voiced = np.isfinite(f0) & (voiced_prob >= 0.55)
+    midi_values = np.full(len(f0), np.nan)
+    midi_values[voiced] = librosa.hz_to_midi(f0[voiced])
     frames = np.arange(len(f0))
     times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
 
@@ -84,14 +87,16 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
     i = 0
     # 連続した有声音部分をノートとしてまとめる簡易ロジック
     while i < n_frames:
-        if not np.isfinite(f0[i]):
+        if not voiced[i]:
             i += 1
             continue
         start = times[i]
         freqs = []
         amps = []
         j = i
-        while j < n_frames and np.isfinite(f0[j]):
+        while j < n_frames and voiced[j]:
+            if j > i and abs(midi_values[j] - midi_values[j - 1]) > 2.5:
+                break
             freqs.append(f0[j])
             frame_start = int(j * hop_length)
             frame_end = min(len(y), frame_start + hop_length)
@@ -100,8 +105,11 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
             amps.append(amp)
             j += 1
         end = times[j - 1] + (hop_length / sr)
+        if end - start < 0.06:
+            i = j
+            continue
         median_freq = float(np.median(freqs))
-        pitch = int(np.round(librosa.hz_to_midi(median_freq)))
+        pitch = int(np.clip(np.round(librosa.hz_to_midi(median_freq)), 0, 127))
         # 簡易ベロシティ: セグメントの振幅に基づくスケーリング
         max_amp = max(amps) if amps else 1e-6
         mean_amp = float(np.mean(amps)) if amps else 0.0
@@ -149,7 +157,7 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
         column = magnitudes[:, frame_index]
         threshold = max(float(np.max(column)) * 0.25, max_magnitude * 0.015)
         candidates = np.flatnonzero(column >= threshold)
-        candidates = candidates[np.argsort(column[candidates])[-4:]] if len(candidates) else []
+        candidates = candidates[np.argsort(column[candidates])[-3:]] if len(candidates) else []
         current = set()
         for bin_index in candidates:
             frequency = float(pitches[bin_index, frame_index])
@@ -177,16 +185,16 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
     return instrument
 
 
-def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256):
-    pm = pretty_midi.PrettyMIDI()
+def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=120.0):
+    pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     pm.instruments.append(
         transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length)
     )
     pm.write(output_path)
 
 
-def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True):
-    pm = pretty_midi.PrettyMIDI()
+def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=120.0):
+    pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     instrument_items = [(name, path) for name, path in stem_paths.items() if name in INSTRUMENTS]
     track_count = len(instrument_items) + (2 if "drums" in stem_paths else 0)
     completed_tracks = 0
@@ -221,9 +229,10 @@ def main():
     parser.add_argument("--fmin", type=float, default=65.0)
     parser.add_argument("--fmax", type=float, default=2093.0)
     parser.add_argument("--hop", type=int, default=256)
+    parser.add_argument("--tempo", type=float, default=120.0)
     args = parser.parse_args()
 
-    transcribe(args.input, args.output, sr=args.sr, fmin=args.fmin, fmax=args.fmax, hop_length=args.hop)
+    transcribe(args.input, args.output, sr=args.sr, fmin=args.fmin, fmax=args.fmax, hop_length=args.hop, tempo=args.tempo)
     print(f"Wrote {args.output}")
 
 

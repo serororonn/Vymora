@@ -72,7 +72,8 @@ def create_midi():
         fmin = float(request.form.get("fmin", 65.0))
         fmax = float(request.form.get("fmax", 2093.0))
         hop_length = int(request.form.get("hop", 256))
-        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0:
+        tempo = float(request.form.get("tempo", 120.0))
+        if sr <= 0 or fmin <= 0 or fmax <= fmin or hop_length <= 0 or tempo <= 0:
             raise ValueError
     except ValueError:
         return {"error": "設定値を確認してください。"}, 400
@@ -83,7 +84,7 @@ def create_midi():
     output_path = Path(work_dir) / "transcribed.mid"
     audio.save(input_path)
     job_id = uuid.uuid4().hex
-    settings = {"sr": sr, "fmin": fmin, "fmax": fmax, "hop_length": hop_length}
+    settings = {"sr": sr, "fmin": fmin, "fmax": fmax, "hop_length": hop_length, "tempo": tempo}
     with JOBS_LOCK:
         JOBS[job_id] = {
             "status": "running",
