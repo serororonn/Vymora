@@ -19,10 +19,10 @@
 4. Piano
 5. Other
 6. Kick
-py -3.10 -m venv .venv310
-.\.venv310\Scripts\Activate.ps1
+7. Snare
+8. Hi-Hat
 
-ドラムはDemucsのドラムステムをオンセットとスペクトル特徴から3種類へ分類します。
+ドラムはDemucsのドラムステムをオンセットとスペクトル特徴から3種類へ分類します。生成後は原曲忠実モードで、セクション/コード解析、明確なドラムの1打抜け補完、ベースの明白な音域外・重複補正を行います。
 
 ## 起動
 
@@ -30,13 +30,15 @@ PowerShellで次を実行します。
 
 ```powershell
 Set-Location .\python
-python -m venv .venv
 py -3.10 -m venv .venv310
 .\.venv310\Scripts\Activate.ps1
+pip install -r requirements.txt
 python app.py
 ```
 
 ブラウザで http://127.0.0.1:5000 を開きます。
+
+出力MIDIにはDAWで確認できる`Structure Analysis`トラックが追加されます。4小節ごとのセクション、密度、推定コードを示すマーカーです。原曲にないメロディやコードは生成しません。
 Python 3.10とTensorFlowが利用できる環境ではBasic Pitchを使います。利用できない環境では、librosaの複数ピーク解析へ自動フォールバックします。単一トラックの高速モードでは、従来のpyinによる単音推定を使います。テンポを0にすると音源からBPMを自動推定します。多重音源では単一トラックよりマルチトラックモードを使用してください。
 
 検出の強さは「強め」「普通」「弱め」から選べます。強めは音符の取りこぼしを減らし、弱めは誤検出を減らします。今回の比較曲では強めがF1最高、弱めがPrecision最高でした。
@@ -45,12 +47,12 @@ Python 3.10とTensorFlowが利用できる環境ではBasic Pitchを使います
 
 ## Windows exeの作成
 
-Python 3.12の仮想環境を用意した後、PowerShellで次を実行します。
+Python 3.10の仮想環境を用意した後、PowerShellで次を実行します。
 
 ```powershell
 Set-Location .\python
-python -m venv .venv312
-.\.venv312\Scripts\Activate.ps1
+py -3.10 -m venv .venv310
+.\.venv310\Scripts\Activate.ps1
 .\build_exe.ps1
 ```
 
@@ -86,6 +88,7 @@ python/
   app.py                 ローカルWebサーバーとジョブAPI
   separation.py         Demucsによる音源分離
   transcribe.py         楽器別MIDI生成とドラム分割
+  arrange_midi.py       構造解析と原曲忠実の後処理
   evaluate.py           推定MIDIと正解MIDIの比較
   templates/index.html  Web UI
   requirements.txt      Python依存関係

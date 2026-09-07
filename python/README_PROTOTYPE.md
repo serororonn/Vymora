@@ -17,6 +17,8 @@
 
 Demucsの6ステムを使い、ドラムステムはオンセットとスペクトル特徴からKick、Snare、Hi-Hatへ分割します。
 
+生成後は原曲忠実モードで、4小節単位のセクション/コード解析、明確なドラムの1打抜け補完、ベースの明白な音域外・重複補正を行います。原曲にないメロディやコードは生成しません。解析結果はMIDIの`Structure Analysis`トラックにマーカーとして出力します。
+
 ## セットアップ
 
 Basic Pitchの高精度推定を使う場合はPython 3.10を使用します。PowerShellで実行します。
@@ -83,6 +85,12 @@ python evaluate.py estimated.mid reference.mid
 
 ```powershell
 python transcribe.py input.wav output.mid
+```
+
+CLIでも検出強度を指定できます。
+
+```powershell
+python transcribe.py input.wav output.mid --accuracy strong
 ```
 
 ## 制約

@@ -10,6 +10,7 @@ import argparse
 import numpy as np
 import librosa
 import pretty_midi
+from arrange_midi import polish_midi
 
 try:
     from basic_pitch.inference import predict
@@ -219,6 +220,7 @@ def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_le
         transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy)
     )
     pm.write(output_path)
+    polish_midi(output_path, output_path)
 
 
 def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0, accuracy="normal"):
@@ -249,6 +251,7 @@ def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, 
         if progress is not None:
             progress(completed_tracks / track_count)
     pm.write(output_path)
+    polish_midi(output_path, output_path)
 
 
 def main():
