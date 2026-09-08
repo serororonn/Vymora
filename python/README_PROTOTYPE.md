@@ -75,9 +75,13 @@ python evaluate.py estimated.mid reference.mid
 - `precision`: 推定ノートのうち正しい割合
 - `recall`: 正解ノートを拾えた割合
 - `f1`: precisionとrecallの調和平均
+- `tracks`: 楽器別のprecision、recall、F1
+- `offset_f1`: 発音終了時刻も一致した場合のF1
 - 発音時刻の平均誤差
 - 音長の平均誤差
 - ベロシティの平均誤差
+
+ノートは同じトラック内で音高と発音時刻を使って一対一に対応付けます。許容範囲は`--onset-tolerance`、`--offset-tolerance`、`--pitch-tolerance`で変更できます。
 
 ## CLI
 

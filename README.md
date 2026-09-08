@@ -79,7 +79,14 @@ Set-Location .\python
 python evaluate.py estimated.mid reference.mid
 ```
 
-評価結果には、`precision`、`recall`、`f1`、発音時刻の平均誤差、音長の平均誤差、ベロシティの平均誤差が含まれます。実音源の評価セットを増やし、楽器別に数値を比較してからモデルや閾値を変更します。
+評価結果には、全体の`precision`、`recall`、`f1`に加えて、トラック別の指標が`tracks`として含まれます。ノートは楽器名、音高、発音時刻で一対一に対応付けられ、別トラックのノートは一致しません。
+`offset_precision`、`offset_recall`、`offset_f1`は、発音終了時刻も許容範囲内だったノートだけを数える指標です。許容範囲は次のように変更できます。
+
+```powershell
+python evaluate.py estimated.mid reference.mid --onset-tolerance 0.05 --offset-tolerance 0.1 --pitch-tolerance 0
+```
+
+実音源の評価セットを増やし、楽器別に数値を比較してからモデルや閾値を変更します。
 
 ## ファイル構成
 
