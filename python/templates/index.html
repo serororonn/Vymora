@@ -61,6 +61,14 @@
             <option value="weak">弱め（誤検出を抑える）</option>
           </select>
         </label>
+        <label>曲タイプ
+          <select name="profile">
+            <option value="auto" selected>自動（標準）</option>
+            <option value="vocaloid">ボカロ・合成音声</option>
+            <option value="synth">シンセ中心</option>
+            <option value="band">バンド</option>
+          </select>
+        </label>
         <label>サンプルレート<input name="sr" type="number" value="16000" min="1"></label>
         <label>最低周波数 (Hz)<input name="fmin" type="number" value="65" min="1" step="0.1"></label>
         <label>最高周波数 (Hz)<input name="fmax" type="number" value="2093" min="1" step="0.1"></label>

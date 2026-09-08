@@ -43,9 +43,33 @@ ACCURACY_PRESETS = {
     "weak": {"onset_threshold": 0.55, "frame_threshold": 0.4, "minimum_note_length": 90.0, "peak_ratio": 0.45, "global_ratio": 0.04, "max_peaks": 2, "min_duration": 0.09},
 }
 
+PROFILE_PRESETS = {
+    "auto": {"overrides": {}},
+    "vocaloid": {
+        "overrides": {
+            "vocals": {"minimum_note_length": 35.0, "onset_threshold": -0.05, "frame_threshold": -0.05, "fmin": 82.0, "fmax": 1047.0},
+        },
+    },
+    "synth": {
+        "overrides": {
+            "other": {"minimum_note_length": 35.0, "max_peaks": 6, "onset_threshold": -0.05},
+            "piano": {"minimum_note_length": 35.0, "max_peaks": 6, "onset_threshold": -0.05},
+        },
+    },
+    "band": {"overrides": {}},
+}
 
-def _accuracy_values(accuracy):
-    return ACCURACY_PRESETS.get(accuracy, ACCURACY_PRESETS["normal"])
+
+def _accuracy_values(accuracy, instrument_name=None, profile="auto"):
+    values = dict(ACCURACY_PRESETS.get(accuracy, ACCURACY_PRESETS["normal"]))
+    overrides = PROFILE_PRESETS.get(profile, PROFILE_PRESETS["auto"])["overrides"].get(instrument_name, {})
+    values.update({key: value for key, value in overrides.items() if key in values})
+    return values
+
+
+def _profile_range(instrument_name, fmin, fmax, profile):
+    overrides = PROFILE_PRESETS.get(profile, PROFILE_PRESETS["auto"])["overrides"].get(instrument_name, {})
+    return overrides.get("fmin", fmin), overrides.get("fmax", fmax)
 
 
 def transcribe_drums(input_path, sr=16000, hop_length=256):
@@ -78,15 +102,16 @@ def transcribe_drums(input_path, sr=16000, hop_length=256):
     return instruments
 
 
-def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal"):
+def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal", profile="auto"):
     if instrument_name == "drums":
         raise ValueError("drums must be expanded into individual drum tracks")
     program, track_name = INSTRUMENTS[instrument_name]
     y, sr = librosa.load(input_path, sr=sr, mono=True)
 
+    fmin, fmax = _profile_range(instrument_name, fmin, fmax, profile)
     # 基本ピッチ推定（librosa.pyin）
     f0, voiced_flag, voiced_prob = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr, hop_length=hop_length)
-    values = _accuracy_values(accuracy)
+    values = _accuracy_values(accuracy, instrument_name, profile)
     voiced = np.isfinite(f0) & (voiced_prob >= values["frame_threshold"])
     midi_values = np.full(len(f0), np.nan)
     midi_values[voiced] = librosa.hz_to_midi(f0[voiced])
@@ -133,14 +158,15 @@ def transcribe_instrument(input_path, instrument_name, sr=16000, fmin=65.0, fmax
     return instrument
 
 
-def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None, accuracy="normal"):
+def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None, accuracy="normal", profile="auto"):
     """Extract overlapping notes from one separated stem with Basic Pitch."""
     if predict is None:
         raise RuntimeError("Basic Pitchがインストールされていません")
     range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
-    minimum_frequency = max(fmin or range_min, range_min)
-    maximum_frequency = min(fmax or range_max, range_max)
-    values = _accuracy_values(accuracy)
+    fmin, fmax = _profile_range(instrument_name, fmin or range_min, fmax or range_max, profile)
+    minimum_frequency = max(fmin, range_min)
+    maximum_frequency = min(fmax, range_max)
+    values = _accuracy_values(accuracy, instrument_name, profile)
     _, midi_data, _ = predict(
         str(input_path),
         model_or_model_path=ICASSP_2022_MODEL_PATH,
@@ -158,9 +184,10 @@ def transcribe_polyphonic(input_path, instrument_name, fmin=None, fmax=None, acc
     return instrument
 
 
-def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal"):
+def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, accuracy="normal", profile="auto"):
     """Estimate several simultaneous notes per frame when Basic Pitch is unavailable."""
     range_min, range_max = PITCH_RANGES.get(instrument_name, (27.5, 4186.0))
+    fmin, fmax = _profile_range(instrument_name, fmin, fmax, profile)
     fmin = max(fmin, range_min)
     fmax = min(fmax, range_max)
     y, sr = librosa.load(input_path, sr=sr, mono=True)
@@ -170,7 +197,7 @@ def transcribe_polyphonic_fallback(input_path, instrument_name, sr=16000, fmin=6
     instrument = pretty_midi.Instrument(program=program, name=track_name)
     active = {}
     max_magnitude = float(np.max(magnitudes)) if magnitudes.size else 1.0
-    values = _accuracy_values(accuracy)
+    values = _accuracy_values(accuracy, instrument_name, profile)
 
     for frame_index in range(pitches.shape[1]):
         column = magnitudes[:, frame_index]
@@ -213,17 +240,17 @@ def _resolve_tempo(input_path, tempo, sr):
     return estimated_tempo if estimated_tempo > 0 else 120.0
 
 
-def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=0.0, accuracy="normal"):
+def transcribe(input_path, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, tempo=0.0, accuracy="normal", profile="auto"):
     tempo = _resolve_tempo(input_path, tempo, sr)
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     pm.instruments.append(
-        transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy)
+        transcribe_instrument(input_path, "piano", sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy, profile=profile)
     )
     pm.write(output_path)
     polish_midi(output_path, output_path)
 
 
-def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0, accuracy="normal"):
+def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, hop_length=256, progress=None, high_accuracy=True, tempo=0.0, accuracy="normal", profile="auto"):
     if tempo <= 0:
         tempo = 120.0
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
@@ -239,13 +266,13 @@ def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, 
             completed_tracks += len(drum_tracks)
         else:
             if high_accuracy and predict is not None:
-                track = transcribe_polyphonic(stem_path, instrument_name, fmin=fmin, fmax=fmax, accuracy=accuracy)
+                track = transcribe_polyphonic(stem_path, instrument_name, fmin=fmin, fmax=fmax, accuracy=accuracy, profile=profile)
             elif high_accuracy:
                 track = transcribe_polyphonic_fallback(
-                    stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy
+                    stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy, profile=profile
                 )
             else:
-                track = transcribe_instrument(stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy)
+                track = transcribe_instrument(stem_path, instrument_name, sr=sr, fmin=fmin, fmax=fmax, hop_length=hop_length, accuracy=accuracy, profile=profile)
             pm.instruments.append(track)
             completed_tracks += 1
         if progress is not None:
