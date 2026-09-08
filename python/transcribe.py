@@ -77,27 +77,53 @@ def transcribe_drums(input_path, sr=16000, hop_length=256):
     onset_frames = librosa.onset.onset_detect(y=y, sr=sr, hop_length=hop_length, backtrack=False)
     onset_strength = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
     spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)[0]
+    spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr, hop_length=hop_length)[0]
+    spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr, hop_length=hop_length, roll_percent=0.85)[0]
+    spectral_flatness = librosa.feature.spectral_flatness(y=y, hop_length=hop_length)[0]
     instruments = {
         36: pretty_midi.Instrument(program=0, is_drum=True, name="Kick"),
         38: pretty_midi.Instrument(program=0, is_drum=True, name="Snare"),
-        42: pretty_midi.Instrument(program=0, is_drum=True, name="Hi-Hat"),
+        42: pretty_midi.Instrument(program=0, is_drum=True, name="Closed Hi-Hat"),
+        46: pretty_midi.Instrument(program=0, is_drum=True, name="Open Hi-Hat"),
+        45: pretty_midi.Instrument(program=0, is_drum=True, name="Low Tom"),
+        47: pretty_midi.Instrument(program=0, is_drum=True, name="Mid Tom"),
+        50: pretty_midi.Instrument(program=0, is_drum=True, name="High Tom"),
+        49: pretty_midi.Instrument(program=0, is_drum=True, name="Crash"),
+        51: pretty_midi.Instrument(program=0, is_drum=True, name="Ride"),
     }
 
     for frame in onset_frames:
         start = float(librosa.frames_to_time(frame, sr=sr, hop_length=hop_length))
-        end = min(len(y), (frame + 1) * hop_length)
+        end = min(len(y), (frame + 3) * hop_length)
         sample = y[frame * hop_length:end]
         level = float(onset_strength[frame]) if frame < len(onset_strength) else 1.0
         centroid = float(spectral_centroid[frame]) if frame < len(spectral_centroid) else 0.0
-        if centroid < 180:
-            pitch = 36  # bass drum
-        elif centroid > 4000:
-            pitch = 42  # closed hi-hat
+        bandwidth = float(spectral_bandwidth[frame]) if frame < len(spectral_bandwidth) else 0.0
+        rolloff = float(spectral_rolloff[frame]) if frame < len(spectral_rolloff) else 0.0
+        flatness = float(spectral_flatness[frame]) if frame < len(spectral_flatness) else 0.0
+        spectrum = np.abs(librosa.stft(sample, n_fft=512, hop_length=128)) if len(sample) >= 512 else np.empty((0, 0))
+        frequencies = librosa.fft_frequencies(sr=sr, n_fft=512)
+        low_energy = float(np.mean(spectrum[(frequencies >= 30) & (frequencies < 180)] ** 2)) if spectrum.size else 0.0
+        high_energy = float(np.mean(spectrum[frequencies >= 4000] ** 2)) if spectrum.size else 0.0
+        decay = float(np.sqrt(np.mean(y[min(len(y), (frame + 2) * hop_length):end] ** 2))) if end > (frame + 2) * hop_length else 0.0
+        onset_rms = float(np.sqrt(np.mean(y[frame * hop_length:min(len(y), (frame + 1) * hop_length)] ** 2)))
+        decay_ratio = decay / max(onset_rms, 1e-6)
+
+        if low_energy > high_energy * 2.5 and centroid < 220:
+            pitch = 36
+        elif centroid > 6500 and bandwidth > 3000 and flatness > 0.12:
+            pitch = 49
+        elif centroid > 5000 and rolloff > 7000:
+            pitch = 51 if flatness < 0.18 else (46 if decay_ratio > 0.28 else 42)
+        elif centroid < 650 and low_energy > high_energy:
+            pitch = 45 if centroid < 300 else (47 if centroid < 450 else 50)
+        elif centroid > 3500:
+            pitch = 46 if decay_ratio > 0.28 else 42
         else:
-            pitch = 38  # snare
+            pitch = 38
         velocity = int(np.clip(45 + level * 10 + np.sqrt(np.mean(sample ** 2)) * 80, 1, 127))
         instruments[pitch].notes.append(
-            pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=start + 0.08)
+            pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=start + (0.18 if pitch in {46, 49, 51} else 0.08))
         )
     return instruments
 
@@ -255,7 +281,7 @@ def transcribe_stems(stem_paths, output_path, sr=16000, fmin=65.0, fmax=2093.0, 
         tempo = 120.0
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     instrument_items = [(name, path) for name, path in stem_paths.items() if name in INSTRUMENTS]
-    track_count = len(instrument_items) + (2 if "drums" in stem_paths else 0)
+    track_count = len(instrument_items) + (9 if "drums" in stem_paths else 0)
     completed_tracks = 0
     for instrument_name, stem_path in instrument_items:
         if instrument_name not in INSTRUMENTS:

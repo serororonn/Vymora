@@ -4,7 +4,7 @@
 
 ## 出力トラック
 
-標準のマルチトラックモードでは、次の8トラックを1つのMIDIファイルへ出力します。
+標準のマルチトラックモードでは、楽器5トラックとドラム9トラックを1つのMIDIファイルへ出力します。
 
 - Vocals
 - Bass
@@ -13,9 +13,12 @@
 - Other
 - Kick
 - Snare
-- Hi-Hat
+- Closed Hi-Hat
+- Open Hi-Hat
+- Low Tom / Mid Tom / High Tom
+- Crash / Ride
 
-Demucsの6ステムを使い、ドラムステムはオンセットとスペクトル特徴からKick、Snare、Hi-Hatへ分割します。
+Demucsの6ステムを使い、ドラムステムはオンセットとスペクトル特徴からKick、Snare、Closed/Open Hi-Hat、Tom、Crash、Rideへ分割します。
 
 生成後は原曲忠実モードで、4小節単位のセクション/コード解析、明確なドラムの1打抜け補完、ベースの明白な音域外・重複補正を行います。原曲にないメロディやコードは生成しません。解析結果はMIDIの`Structure Analysis`トラックにマーカーとして出力します。
 
